@@ -1,0 +1,72 @@
+# =============================================================================
+# Configuration de l'outil d'audit / dédup du catalogue Shopify
+# -----------------------------------------------------------------------------
+# Copiez ce fichier en `config.yaml`. Ce fichier ne contient AUCUN secret
+# (les secrets viennent exclusivement de .env). Il peut être versionné.
+# =============================================================================
+
+api:
+  # Version stable de l'Admin GraphQL API. Le préflight (--test-connection)
+  # vérifie qu'elle est supportée par la boutique et échoue tôt sinon.
+  version: "2026-04"
+
+cache:
+  # Répertoire du cache local de données produits (jamais de token/secret dedans).
+  dir: "cache"
+  # Durée de validité du cache en heures. Au-delà, re-fetch automatique.
+  # --refresh force un re-fetch quelle que soit l'ancienneté.
+  ttl_hours: 6
+  # Stratégie de récupération :
+  #   auto  -> pagination par curseurs, bascule en bulk si volume élevé
+  #   paginate -> force la pagination par curseurs
+  #   bulk  -> force les Bulk Operations (export JSONL)
+  fetch_strategy: "auto"
+  # Seuil (nb de produits) au-dessus duquel "auto" bascule en Bulk Operations.
+  bulk_threshold: 2000
+
+dedup:
+  # Critères de détection. Chacun produit ses propres groupes dans le rapport,
+  # avec la raison du match (critères indépendants).
+  criteria:
+    sku: true              # produits partageant un SKU de variante
+    title_normalized: true # titre identique après normalisation
+    title_vendor: true     # titre normalisé + vendor identiques
+    handle_fuzzy: true     # handles proches (re-import : -1, -2, copy-of-...)
+
+  # Sensibilité du match "handle proche".
+  #   strict   -> suffixe numérique / "copy-of" uniquement (quasi zéro faux positif)
+  #   moderate -> distance d'édition (ratio >= handle_fuzzy_ratio)
+  handle_fuzzy_mode: "strict"
+  handle_fuzzy_ratio: 0.90  # utilisé seulement si handle_fuzzy_mode = moderate
+
+  # Normalisation appliquée avant comparaison de titres/handles.
+  normalize:
+    lowercase: true
+    strip: true
+    strip_accents: true
+    collapse_whitespace: true
+
+  # Règle de désignation du produit "à garder" dans chaque groupe.
+  #   oldest      -> createdAt le plus ancien (choisi)
+  #   most_stock  -> inventaire total le plus élevé
+  #   most_complete -> plus de champs remplis (image, body, sku, collections)
+  keep_rule: "oldest"
+
+cleanup:
+  # Action appliquée aux doublons "à traiter" avec --apply.
+  #   archive -> statut ARCHIVED (choisi)
+  #   draft   -> statut DRAFT
+  action: "archive"
+  # Nombre de mutations par lot.
+  batch_size: 25
+
+logging:
+  # Répertoire des fichiers de log horodatés (un par run).
+  dir: "logs"
+  # Niveau console : DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+
+output:
+  # Répertoires de sortie des rapports et des backups CSV.
+  reports_dir: "reports"
+  backups_dir: "backups"

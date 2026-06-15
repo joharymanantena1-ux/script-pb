@@ -1,0 +1,8 @@
+# HTTP client for Shopify Admin GraphQL + OAuth token endpoint
+requests>=2.31,<3
+
+# .env loading (secrets never committed)
+python-dotenv>=1.0,<2
+
+# YAML config parsing
+PyYAML>=6.0,<7

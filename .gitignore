@@ -1,0 +1,32 @@
+# Secrets & environment
+.env
+.env.local
+*.env
+
+# Config locale (l'utilisateur la crée depuis config.example.yaml)
+config.yaml
+
+# Cache (product data) & logs
+cache/
+logs/
+*.log
+
+# Generated reports & backups
+reports/
+backups/
+*.jsonl
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
