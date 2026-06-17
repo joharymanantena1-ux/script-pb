@@ -96,6 +96,7 @@ _BULK_QUERY = """
         variants {
           edges {
             node {
+              id
               sku
               inventoryQuantity
               inventoryItem { tracked }
@@ -125,6 +126,16 @@ query BulkPoll {
     errorCode
     objectCount
     url
+  }
+}
+"""
+
+# Annulation d'une opération bulk préexistante (une seule par boutique à la fois).
+_BULK_CANCEL_MUTATION = """
+mutation BulkCancel($id: ID!) {
+  bulkOperationCancel(id: $id) {
+    bulkOperation { id status }
+    userErrors { field message }
   }
 }
 """
@@ -303,6 +314,12 @@ class ProductFetcher:
 
     # -- Bulk Operations ------------------------------------------------- #
     def _fetch_bulk(self) -> list[dict[str, Any]]:
+        # Une seule opération bulk QUERY par boutique à la fois : si une autre
+        # est déjà en cours (CREATED/RUNNING), `currentBulkOperation` renverrait
+        # SES résultats (URL d'un autre run) au lieu des nôtres. On l'annule
+        # d'abord pour garantir qu'on lit bien notre propre opération.
+        self._cancel_running_bulk()
+
         self._log.info("Lancement d'une Bulk Operation…")
         data = self._client.execute(
             _BULK_RUN_MUTATION, variables={"query": _BULK_QUERY}, estimated_cost=10
@@ -313,21 +330,53 @@ class ProductFetcher:
             raise RuntimeError(f"bulkOperationRunQuery a échoué : {errors}")
         op = result["bulkOperation"]
         self._log.info("Bulk Operation créée : %s (%s).", op["id"], op["status"])
+        our_op_id = op["id"]
 
-        url = self._poll_bulk()
+        url = self._poll_bulk(expected_id=our_op_id)
         if url is None:
             self._log.warning("Bulk Operation sans données (catalogue vide ?).")
             return []
         return self._download_and_parse_jsonl(url)
 
-    def _poll_bulk(self) -> str | None:
-        """Sonde l'opération courante jusqu'à COMPLETED ; back-off doux."""
+    def _cancel_running_bulk(self) -> None:
+        """Annule toute opération bulk QUERY préexistante (CREATED/RUNNING)."""
+        data = self._client.execute(_BULK_POLL_QUERY, estimated_cost=10)
+        op = data.get("currentBulkOperation")
+        if not op or op.get("status") not in ("CREATED", "RUNNING"):
+            return
+        self._log.warning(
+            "Opération bulk préexistante détectée (%s, %s) — annulation.",
+            op["id"], op["status"],
+        )
+        self._client.execute(
+            _BULK_CANCEL_MUTATION, variables={"id": op["id"]}, estimated_cost=10
+        )
+        # Petite attente pour laisser l'annulation se propager.
+        for _ in range(10):
+            chk = self._client.execute(_BULK_POLL_QUERY, estimated_cost=10)
+            cur = chk.get("currentBulkOperation") or {}
+            if cur.get("status") not in ("CREATED", "RUNNING", "CANCELING"):
+                return
+            time.sleep(1.5)
+
+    def _poll_bulk(self, expected_id: str | None = None) -> str | None:
+        """Sonde l'opération courante jusqu'à COMPLETED ; back-off doux.
+
+        Si `expected_id` est fourni, vérifie que l'opération sondée est bien la
+        nôtre (sécurité contre une opération concurrente qui aurait pris le pas).
+        """
         delay = 2.0
         while True:
             data = self._client.execute(_BULK_POLL_QUERY, estimated_cost=10)
             op = data.get("currentBulkOperation")
             if not op:
                 raise RuntimeError("Aucune Bulk Operation courante à sonder.")
+            if expected_id and op.get("id") != expected_id:
+                raise RuntimeError(
+                    "L'opération bulk courante n'est pas la nôtre "
+                    f"(attendu {expected_id}, vu {op.get('id')}). "
+                    "Une autre opération a démarré en parallèle — réessayez."
+                )
             status = op["status"]
             self._log.info(
                 "  bulk status=%s objets=%s", status, op.get("objectCount")
