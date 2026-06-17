@@ -107,7 +107,8 @@ class DedupConfig:
     handle_fuzzy_mode: str = "strict"   # strict | moderate
     handle_fuzzy_ratio: float = 0.90
     normalize: NormalizeConfig = field(default_factory=NormalizeConfig)
-    keep_rule: str = "oldest"           # oldest | most_stock | most_complete
+    # active_then_oldest : garde un ACTIVE en priorité (sinon le plus ancien).
+    keep_rule: str = "active_then_oldest"
 
 
 @dataclass
@@ -148,7 +149,7 @@ class Config:
     # Champs valides pour la validation
     _VALID_FETCH = ("auto", "paginate", "bulk")
     _VALID_FUZZY = ("strict", "moderate")
-    _VALID_KEEP = ("oldest", "most_stock", "most_complete")
+    _VALID_KEEP = ("oldest", "most_stock", "most_complete", "active_then_oldest")
     _VALID_ACTION = ("archive", "draft")
 
     def validate(self) -> None:
@@ -235,7 +236,7 @@ def load_config(path: str | os.PathLike[str] = "config.yaml") -> Config:
                 strip_accents=bool(_get(norm, "strip_accents", True)),
                 collapse_whitespace=bool(_get(norm, "collapse_whitespace", True)),
             ),
-            keep_rule=_get(dedup, "keep_rule", "oldest"),
+            keep_rule=_get(dedup, "keep_rule", "active_then_oldest"),
         ),
         cleanup=CleanupConfig(
             action=_get(cleanup, "action", "archive"),
