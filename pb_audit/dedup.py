@@ -98,15 +98,24 @@ def _keeper_selector(rule: str) -> Callable[[list[dict[str, Any]]], dict[str, An
                 + int(bool(p.get("skus")))
                 + int((p.get("collectionsCount") or 0) > 0)
             )
-            # Départage par ancienneté (le plus ancien gagne) si égalité.
-            return (completeness, -_created_rank(p))
+            # Départage par statut (ACTIVE prioritaire) puis ancienneté.
+            return (completeness, int(p.get("status") == "ACTIVE"), -_created_rank(p))
         return max(group, key=score)
+
+    def by_active_then_oldest(group: list[dict[str, Any]]) -> dict[str, Any]:
+        # On garde en priorité un produit ACTIVE ; à statut égal, le plus ancien.
+        # Conséquence : on n'archive jamais un ACTIVE pour garder un DRAFT.
+        def key(p: dict[str, Any]) -> tuple:
+            # min() : plus petit = gardé. ACTIVE -> 0 (prioritaire) ; createdAt croissant.
+            return (0 if p.get("status") == "ACTIVE" else 1, p.get("createdAt") or "9999")
+        return min(group, key=key)
 
     return {
         "oldest": by_oldest,
         "most_stock": by_most_stock,
         "most_complete": by_most_complete,
-    }.get(rule, by_oldest)
+        "active_then_oldest": by_active_then_oldest,
+    }.get(rule, by_active_then_oldest)
 
 
 def _created_rank(p: dict[str, Any]) -> int:

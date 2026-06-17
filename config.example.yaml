@@ -47,10 +47,12 @@ dedup:
     collapse_whitespace: true
 
   # Règle de désignation du produit "à garder" dans chaque groupe.
-  #   oldest      -> createdAt le plus ancien (choisi)
-  #   most_stock  -> inventaire total le plus élevé
+  #   active_then_oldest -> garde un ACTIVE en priorité, sinon le plus ancien
+  #                         (n'archive JAMAIS un ACTIVE pour garder un DRAFT) [choisi]
+  #   oldest        -> createdAt le plus ancien (status-blind)
+  #   most_stock    -> inventaire total le plus élevé
   #   most_complete -> plus de champs remplis (image, body, sku, collections)
-  keep_rule: "oldest"
+  keep_rule: "active_then_oldest"
 
 cleanup:
   # Action appliquée aux doublons "à traiter" avec --apply.
