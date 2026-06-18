@@ -66,6 +66,7 @@ query ProductsPage($cursor: String) {
       variants(first: 100) {
         nodes {
           sku
+          barcode
           inventoryQuantity
           inventoryItem { tracked }
         }
@@ -98,6 +99,7 @@ _BULK_QUERY = """
             node {
               id
               sku
+              barcode
               inventoryQuantity
               inventoryItem { tracked }
             }
@@ -147,19 +149,24 @@ mutation BulkCancel($id: ID!) {
 def _normalize_product(node: dict[str, Any], variants: list[dict[str, Any]]) -> dict[str, Any]:
     """Convertit un nœud produit GraphQL en dict de domaine homogène."""
     skus: list[str] = []
+    barcodes: list[str] = []
     norm_variants: list[dict[str, Any]] = []
     for v in variants:
         sku = (v.get("sku") or "").strip()
+        barcode = (v.get("barcode") or "").strip()
         tracked = bool((v.get("inventoryItem") or {}).get("tracked", False))
         norm_variants.append(
             {
                 "sku": sku,
+                "barcode": barcode,
                 "inventoryQuantity": v.get("inventoryQuantity"),
                 "tracked": tracked,
             }
         )
         if sku:
             skus.append(sku)
+        if barcode:
+            barcodes.append(barcode)
 
     body = node.get("descriptionHtml") or ""
     return {
@@ -176,6 +183,7 @@ def _normalize_product(node: dict[str, Any], variants: list[dict[str, Any]]) -> 
         "bodyHtmlLen": len(body.strip()),
         "variants": norm_variants,
         "skus": skus,
+        "barcodes": barcodes,
         "collectionsCount": _collections_count(node),
     }
 

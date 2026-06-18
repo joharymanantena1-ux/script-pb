@@ -305,7 +305,7 @@ def detect_duplicates(products: list[dict[str, Any]], cfg: DedupConfig) -> Dedup
         else:  # strict
             g = _group_by_key(
                 products,
-                key_fn=lambda p: handle_base(p.get("handle", "")),
+                key_fn=lambda p: handle_base(p.get("handle", ""), p.get("title", "")),
                 criterion="handle_fuzzy",
                 reason_fn=lambda k: f"Handles de même racine (re-import) : « {k} »",
                 select_keeper=select_keeper,
