@@ -127,6 +127,47 @@ def _created_rank(p: dict[str, Any]) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# Sécurité EAN : un code-barres = un article unique
+# --------------------------------------------------------------------------- #
+def _ean_key(p: dict[str, Any]) -> str | None:
+    """Retourne l'EAN normalisé d'un produit, ou None s'il n'en a pas.
+
+    On retire les zéros de tête pour comparer 0123 et 123 comme identiques.
+    """
+    barcodes = p.get("barcodes") or []
+    if not barcodes:
+        return None
+    bc = (barcodes[0] or "").strip().lstrip("0")
+    return bc or None
+
+
+def _split_cluster_by_ean(cluster: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Éclate un cluster de RESSEMBLANCE selon l'EAN.
+
+    Règle : deux produits qui ont chacun un EAN et dont les EAN diffèrent ne
+    peuvent pas être des doublons (un code-barres = un article physique unique).
+    Les produits SANS EAN restent regroupés ensemble (on ne peut pas les
+    départager) et sont rattachés au sous-groupe des produits sans EAN.
+
+    Retour : liste de sous-clusters. Chaque sous-cluster = même EAN, plus, en
+    sous-cluster séparé, les produits sans EAN.
+    """
+    by_ean: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    no_ean: list[dict[str, Any]] = []
+    for p in cluster:
+        ean = _ean_key(p)
+        if ean is None:
+            no_ean.append(p)
+        else:
+            by_ean[ean].append(p)
+
+    subclusters = list(by_ean.values())
+    if no_ean:
+        subclusters.append(no_ean)
+    return subclusters
+
+
+# --------------------------------------------------------------------------- #
 # Construction d'un groupe à partir d'un cluster de produits
 # --------------------------------------------------------------------------- #
 def _make_group(
@@ -211,8 +252,14 @@ def _group_by_sku(products, select_keeper) -> list[DuplicateGroup]:
     return groups
 
 
-def _group_by_key(products, key_fn, criterion, reason_fn, select_keeper) -> list[DuplicateGroup]:
-    """Regroupe par clé exacte (titre normalisé, titre+vendor, racine de handle)."""
+def _group_by_key(products, key_fn, criterion, reason_fn, select_keeper,
+                  split_by_ean: bool = True) -> list[DuplicateGroup]:
+    """Regroupe par clé exacte (titre normalisé, titre+vendor, racine de handle).
+
+    Pour les critères de RESSEMBLANCE (split_by_ean=True), chaque cluster est
+    d'abord éclaté par EAN : des produits aux codes-barres différents ne sont
+    jamais considérés comme doublons.
+    """
     buckets: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for p in products:
         key = key_fn(p)
@@ -221,9 +268,11 @@ def _group_by_key(products, key_fn, criterion, reason_fn, select_keeper) -> list
 
     groups: list[DuplicateGroup] = []
     for key, cluster in buckets.items():
-        g = _make_group(criterion, key, cluster, select_keeper, reason_fn(key))
-        if g:
-            groups.append(g)
+        subclusters = _split_cluster_by_ean(cluster) if split_by_ean else [cluster]
+        for sub in subclusters:
+            g = _make_group(criterion, key, sub, select_keeper, reason_fn(key))
+            if g:
+                groups.append(g)
     return groups
 
 
@@ -250,12 +299,14 @@ def _group_handle_moderate(products, ratio_threshold, select_keeper) -> list[Dup
             for k in cluster_idx:
                 used.add(k)
             cluster = [products[k] for k in cluster_idx]
-            g = _make_group(
-                "handle_fuzzy", h_i, cluster, select_keeper,
-                reason=f"Handles similaires (ratio >= {ratio_threshold}) à « {h_i} »",
-            )
-            if g:
-                groups.append(g)
+            # Sécurité EAN : éclate le cluster si des codes-barres diffèrent.
+            for sub in _split_cluster_by_ean(cluster):
+                g = _make_group(
+                    "handle_fuzzy", h_i, sub, select_keeper,
+                    reason=f"Handles similaires (ratio >= {ratio_threshold}) à « {h_i} »",
+                )
+                if g:
+                    groups.append(g)
     return groups
 
 
